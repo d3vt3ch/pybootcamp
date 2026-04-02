@@ -1,0 +1,43 @@
+# VS Code Setup & Shortcuts
+
+---
+# Day X - Topic
+
+## 📌 Concept
+## ⚙️ Commands
+## ✅ Steps
+## 💡 Tips
+## ❌ Mistakes
+## ✅ Summary
+
+---
+
+## ⚠️ Issue: Cannot run `code --version`
+
+### 📌 Problem
+The `code` command is not recognized in terminal.
+
+### ✅ Solution
+
+1. Open Visual Studio Code  
+2. Press `Cmd (⌘) + Shift + P`  
+3. Search for:  
+   `Shell Command: Install 'code' command in PATH`  
+4. Click and install  
+
+### 💡 Tip
+Restart your terminal after installation.
+
+---
+
+## 💻 How to Comment Code in Bulk
+
+### ✅ Steps
+
+1. Highlight the code  
+2. Press `Cmd (⌘) + /`  
+
+### 💡 Tip
+- Works for most languages in VS Code  
+- Use again to **uncomment**
+
