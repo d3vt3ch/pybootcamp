@@ -43,6 +43,7 @@ This is about becoming **more capable, adaptable, and valuable**.
 ---
 
 ## 📂 Repository Structure
+```
 .
 ├── day1/
 ├── day2/
@@ -51,7 +52,7 @@ This is about becoming **more capable, adaptable, and valuable**.
 ├── exercises/
 ├── projects/
 
-
+```
 ---
 
 ## 🧠 Skills I’m Building
