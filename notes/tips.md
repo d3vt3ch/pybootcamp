@@ -41,3 +41,17 @@ Restart your terminal after installation.
 - Works for most languages in VS Code  
 - Use again to **uncomment**
 
+### 💡 to pull from main and create branch 
+```bash
+git checkout main
+git pull
+git checkout -b day3
+```
+
+What your commands do
+git checkout main
+👉 Switch to main branch
+git pull
+👉 Get latest updates from GitHub
+git checkout -b day3
+👉 Create new branch day3 from updated main
