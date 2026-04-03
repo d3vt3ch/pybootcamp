@@ -1,13 +1,8 @@
-# Day 3
-
-## 📌 learning for List , tuples and set
-
-
-### Exercise:
+# Exercise:
 # 1.Create a system that stores student grades as tuples (name, subject, grade)
 # and uses sets to find unique subjects and students. grades = [  ("Alice", "Math", 85),  ("Bob", "Science", 92),  ("Alice", "Science", 78),  ("Charlie", "Math", 90),  ("Bob", "Math", 88),  ("Alice", "English", 95) ]
 
-```python
+
 grades = [
     ("Alice", "Math", 85),
     ("Bob", "Science", 92),
@@ -48,5 +43,3 @@ for grade in grades:
     subjects.add(grade[1])          # add the subject (second element of the tuple) to the subjects set 
 print("Unique students:", students) # print("Unique subjects:", subjects)
 print("Unique subjects:", subjects) # print("Unique students:", students) #
-
-```
