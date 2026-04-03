@@ -55,3 +55,12 @@ git pull
 👉 Get latest updates from GitHub
 git checkout -b day3
 👉 Create new branch day3 from updated main
+
+
+| Keyword   | Meaning          |
+| --------- | ---------------- |
+| `try`     | Try this code    |
+| `except`  | If error happens |
+| `else`    | If no error      |
+| `finally` | Always run       |
+
