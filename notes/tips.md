@@ -88,3 +88,13 @@ else:
 finally:
     # always runs
 ```
+
+## How to Turn on / off autocomplete
+
+1. Cmd + Shift + P (Ctrl+shift+P)
+
+2. Type "Toggle"
+
+3. find "Github Copilot: Toggle (Enable/Disable) Inline Suggestion
+
+

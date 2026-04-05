@@ -13,4 +13,27 @@ print(grades)
 # Find unique students
 
 students = set()
-for name, 
+for name, subject,grade in grades:
+    students.add(name)
+
+print (students)
+
+subjects = set()
+for name, subject, grade in grades:
+    subjects.add(subject)
+
+print (subjects)
+
+
+students={student for student, subject, grade in grades}
+print(students)
+
+subjects={subject for student, subject,grade in grades}
+print (subjects)
+
+for grade in grades:
+    students.add(grade[0])
+    subjects.add(grade[1])
+
+print(students)
+print(subjects)
