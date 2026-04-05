@@ -33,10 +33,28 @@ This is about becoming **more capable, adaptable, and valuable**.
 | Day | Topic | Status |
 |-----|------|--------|
 | 1 | Variables & Data Types | ✅ Completed |
-| 2 | Operators & Expressions | ✅ Completed |
-| 3 | Conditional Statements | ⏳ In Progress |
-| 4 | Loops | ⏳ Pending |
-| 5 | Functions | ⏳ Pending |
+| 2 | Sting Manipulation | ✅ Completed |
+| 3 | I/O Validation | ✅ Completed |
+| 4 | Conditional Statements | ✅ Completed |
+| 5 | Loops | ✅ Completed |
+| 6 | Lists | ✅ Completed |
+| 7 | Tuples | ✅ Completed |
+| 8 | Sets | ✅ Completed |
+| 9 | Dictionaries | ⏳ Pending |
+| 10 | Functions | ⏳ Pending |
+| 11 | Error Handling | ⏳ Pending |
+| 12 | Classes Objects | ⏳ Pending |
+| 13 | OOP | ⏳ Pending |
+| 14 | Modules libraries | ⏳ Pending |
+| 15 | Sqlite | ⏳ Pending |
+| 16 | Mongo | ⏳ Pending |
+| 17 | Fastsql | ⏳ Pending |
+| 18 | fastmongo | ⏳ Pending |
+| 19 | streamlit | ⏳ Pending |
+| 20 | fullstack RAG backend | ⏳ Pending |
+| 21 | fullstack RAG frontend | ⏳ Pending |
+
+
 
 > 📌 Updated as I progress through the bootcamp
 
@@ -45,12 +63,9 @@ This is about becoming **more capable, adaptable, and valuable**.
 ## 📂 Repository Structure
 ```
 .
-├── day1/
-├── day2/
-├── day3/
 ├── notes/
-├── exercises/
-├── projects/
+├── pdf/
+├── py/
 
 ```
 ---
