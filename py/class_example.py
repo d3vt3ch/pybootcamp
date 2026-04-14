@@ -44,3 +44,40 @@ class BankAccount:
 
     def deposit(self, amount):
         if amount > 0:
+            self.balance += amount
+            self.transaction_history.append(f"Deposited: ${amount}")
+            return f"Deposited ${amount}. New balance: ${self.balance}."
+        else:
+            return "Deposit amount must be positive."
+        
+    def withdraw(self, amount):
+        if amount > 0 and amount <= self.balance:
+            self.balance -= amount
+            self.transaction_history.append(f"Withdrew: ${amount}")
+            return f"Withdrew ${amount}. New balance: ${self.balance}."
+        else:
+            return "Withdrawal amount must be positive and less than or equal to the balance."
+        
+    def get_balance(self):
+        return f"Current balance: ${self.balance}."
+
+    def get_transaction_history(self):
+        return self.transaction_history
+    
+# using the BankAccount class
+account = BankAccount("12345", "Amir", 1000)
+
+print(account.get_balance())
+print(account.deposit(500))
+print(account.withdraw(200))
+print(account.get_transaction_history())
+print(account.get_balance())
+
+# using the BankAccount class
+account = BankAccount("22345", "Amira", 10000)
+
+print(account.get_balance())
+print(account.deposit(500))
+print(account.withdraw(200))
+print(account.get_transaction_history())
+print(account.get_balance())
