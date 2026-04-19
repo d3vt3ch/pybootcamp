@@ -40,17 +40,17 @@ This is about becoming **more capable, adaptable, and valuable**.
 | 6 | Lists | ✅ Completed |
 | 7 | Tuples | ✅ Completed |
 | 8 | Sets | ✅ Completed |
-| 9 | Dictionaries | ⏳ Pending |
-| 10 | Functions | ⏳ Pending |
-| 11 | Error Handling | ⏳ Pending |
-| 12 | Classes Objects | ⏳ Pending |
-| 13 | OOP | ⏳ Pending |
-| 14 | Modules libraries | ⏳ Pending |
-| 15 | Sqlite | ⏳ Pending |
-| 16 | Mongo | ⏳ Pending |
+| 9 | Dictionaries | ✅ Completed |
+| 10 | Functions | ✅ Completed |
+| 11 | Error Handling | ✅ Completed |
+| 12 | Classes Objects | ✅ Completed |
+| 13 | OOP | ✅ Completed |
+| 14 | Modules libraries | ✅ Completed |
+| 15 | Sqlite | ✅ Completed |
+| 16 | Mongo | ✅ Completed |
 | 17 | Fastsql | ⏳ Pending |
 | 18 | fastmongo | ⏳ Pending |
-| 19 | streamlit | ⏳ Pending |
+| 19 | streamlit | ✅ Completed |
 | 20 | fullstack RAG backend | ⏳ Pending |
 | 21 | fullstack RAG frontend | ⏳ Pending |
 
