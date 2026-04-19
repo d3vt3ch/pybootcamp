@@ -97,4 +97,33 @@ finally:
 
 3. find "Github Copilot: Toggle (Enable/Disable) Inline Suggestion
 
+## ⚠️ Issue: Cannot run 'myvenv\Scripts\activate'
+
+have error 
+Fully Qualified error : Unauthorized Access
+
+just type in:
+set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+
+## 💡 Tips 
+### CREATE VIRTUAL ENV FOR EVERY PROJECT
+
+make sure you are on the root folder [pybootcamp]
+
+python3 -m venv [your_virtual_folder_name]
+
+for MACOS
+```bash
+
+python3 -m venv myvenv
+source myvenv/bin/activate
+pip install pymongo python-dotenv
+```
+
+for WinOS
+```bash
+pip install pymongo
+pip install python-dotenv
+```
 

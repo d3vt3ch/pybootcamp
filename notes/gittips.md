@@ -46,5 +46,9 @@ git push origin main    #Push updated main to GitHub
 
 ```
 
+Activate virtual env
 
+```bash
+source myvenv/bin/activate
 
+```
