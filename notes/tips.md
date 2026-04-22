@@ -127,3 +127,12 @@ pip install pymongo
 pip install python-dotenv
 ```
 
+
+## RUN this in two terminals
+
+```bash
+streamlit run app.py
+
+uvicorn hangman_v5:app
+
+```

@@ -1,6 +1,5 @@
 # Create a API using FastAPI for CRUD database
 
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import sqlite3
@@ -98,7 +97,63 @@ def create_category(category: CategoryCreate):
     finally:
         conn.close()
 
-# 2. Add Word (Create)
+#2. View Categories (Read)
+@app.get("/categories/", tags=["Categories"])
+def view_categories():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, name FROM categories")
+    # Format the result into a clean list of dictionaries
+    categories = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+    
+    conn.close()
+    return categories
+
+# 3. Update the category 
+# Update Category (Update)
+@app.put("/categories/{category_id}", tags=["Categories"])
+def update_category(category_id: int, category_data: CategoryUpdate):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Clean the input to match your terminal logic
+    new_name = category_data.name.lower().strip()
+    
+    try:
+        cursor.execute("UPDATE categories SET name = ? WHERE id = ?", (new_name, category_id))
+        
+        # Check if the category actually existed
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Category not found.")
+            
+        conn.commit()
+        return {"message": f"Category renamed to '{new_name.capitalize()}' successfully!"}
+        
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="A category with that name already exists.")
+    finally:
+        conn.close()
+
+# 4. Remove Category (Delete)
+@app.delete("/categories/{category_id}", tags=["Categories"])
+def remove_category(category_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON") # Crucial for cascading deletes
+    
+    cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Category not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": "Category and all associated words deleted successfully."}
+
+# 5. Add Word (Create)
 @app.post("/words/", tags=["Words"])
 def add_word(word_data: WordCreate):
     conn = sqlite3.connect(DB_NAME)
@@ -116,7 +171,7 @@ def add_word(word_data: WordCreate):
     finally:
         conn.close()
 
-# 3. View Words (Read)
+# 6. View Words (Read)
 @app.get("/words/", tags=["Words"])
 def view_words():
     conn = sqlite3.connect(DB_NAME)
@@ -147,7 +202,7 @@ def view_words():
     conn.close()
     return result
 
-# 4. Edit Word (Update)
+# 7. Edit Word (Update)
 @app.put("/words/{word_id}", tags=["Words"])
 def edit_word(word_id: int, word_data: WordUpdate):
     conn = sqlite3.connect(DB_NAME)
@@ -162,7 +217,7 @@ def edit_word(word_id: int, word_data: WordUpdate):
     conn.close()
     return {"message": "Word updated successfully."}
 
-# 5. Remove Word (Delete)
+# 8. Remove Word (Delete)
 @app.delete("/words/{word_id}", tags=["Words"])
 def remove_word(word_id: int):
     conn = sqlite3.connect(DB_NAME)
@@ -176,64 +231,6 @@ def remove_word(word_id: int):
     conn.commit()
     conn.close()
     return {"message": "Word deleted successfully."}
-
-# 8. Update the category 
-# Update Category (Update)
-@app.put("/categories/{category_id}", tags=["Categories"])
-def update_category(category_id: int, category_data: CategoryUpdate):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    # Clean the input to match your terminal logic
-    new_name = category_data.name.lower().strip()
-    
-    try:
-        cursor.execute("UPDATE categories SET name = ? WHERE id = ?", (new_name, category_id))
-        
-        # Check if the category actually existed
-        if cursor.rowcount == 0:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Category not found.")
-            
-        conn.commit()
-        return {"message": f"Category renamed to '{new_name.capitalize()}' successfully!"}
-        
-    except sqlite3.IntegrityError:
-        conn.close()
-        raise HTTPException(status_code=400, detail="A category with that name already exists.")
-    finally:
-        conn.close()
-
-# 6. Remove Category (Delete)
-@app.delete("/categories/{category_id}", tags=["Categories"])
-def remove_category(category_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON") # Crucial for cascading deletes
-    
-    cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
-    if cursor.rowcount == 0:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Category not found.")
-        
-    conn.commit()
-    conn.close()
-    return {"message": "Category and all associated words deleted successfully."}
-
-#7. View Categories (Read)
-@app.get("/categories/", tags=["Categories"])
-def view_categories():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT id, name FROM categories")
-    # Format the result into a clean list of dictionaries
-    categories = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
-    
-    conn.close()
-    return categories
-
-
 
 
 # --- USER (SCORE) ENDPOINTS ---
@@ -322,6 +319,7 @@ def delete_user(player_name: str):
     conn.close()
     return {"message": f"User '{clean_target_name}' deleted successfully."}
 
+# Random word
 @app.get("/game/word/{category_id}", tags=["Game"])
 def get_random_word(category_id: int):
     conn = sqlite3.connect(DB_NAME)

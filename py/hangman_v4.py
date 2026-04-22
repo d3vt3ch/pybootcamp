@@ -1,5 +1,5 @@
 # hangman game with CRUD functionality
-# using sqlite for managing the data.
+# using SQLITE for managing the data.
 
 import random
 import sqlite3
