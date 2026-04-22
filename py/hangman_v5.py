@@ -1,23 +1,21 @@
-# hangman game with CRUD functionality
-# using sqlite for managing the data.
-# adding FastAPI 
+# Create a API using FastAPI for CRUD database
 
-from fastapi import FastAPI, HTTPException, Depends
+
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import random
 import sqlite3
-from typing import List
+from typing import Optional
+import random
 
-
-# --- CONFIGURATION ---
+# --- DATABASE CONFIGURATION ---
 DB_NAME = "hangman.db"
-app = FastAPI(title="Hangman API", description="Full CRUD & Game Engine")
 
-# --- DATABASE INITIALIZATION (From main project reference) ---
 def init_db():
+    """Initializes the database and populates default words if empty."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS categories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,8 +36,7 @@ def init_db():
             wins INTEGER DEFAULT 0
         )
     """)
-    
-    # Initial seed data
+
     cursor.execute("SELECT COUNT(*) FROM categories")
     if cursor.fetchone()[0] == 0:
         default_words = {
@@ -52,426 +49,319 @@ def init_db():
             cat_id = cursor.lastrowid
             for w in word_list:
                 cursor.execute("INSERT INTO words (category_id, word) VALUES (?, ?)", (cat_id, w))
+    
     conn.commit()
     conn.close()
 
 # Initialize DB at startup
 init_db()
 
-# --- DATABASE DEPENDENCY ---
-def get_db():
-    """Provides a database connection for each request and closes it after."""
+# --- FASTAPI SETUP ---
+app = FastAPI(title="Hangman Dictionary API")
+
+# --- PYDANTIC MODELS ---
+class CategoryCreate(BaseModel):
+    name: str
+
+class CategoryUpdate(BaseModel):
+    name: str
+
+class WordCreate(BaseModel):
+    category_id: int
+    word: str
+
+class WordUpdate(BaseModel):
+    word: str
+
+class UserCreate(BaseModel):
+    player_name: str
+    wins: int = 0
+
+class UserUpdate(BaseModel):
+    new_player_name: Optional[str] = None
+    wins: Optional[int] = None
+
+# --- API ENDPOINTS ---
+
+# 1. Create New Category (Create)
+@app.post("/categories/", tags=["Categories"])
+def create_category(category: CategoryCreate):
     conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row  # Allows accessing columns by name
+    cursor = conn.cursor()
     try:
-        yield conn
+        cursor.execute("INSERT INTO categories (name) VALUES (?)", (category.name.lower().strip(),))
+        conn.commit()
+        return {"message": f"Category '{category.name}' created successfully!"}
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Category already exists.")
     finally:
         conn.close()
 
-# --- PYDANTIC MODELS (Data Validation) ---
-class CategoryBase(BaseModel):
-    name: str
-
-class CategoryResponse(CategoryBase):
-    id: int
-
-class WordCreate(BaseModel):
-    word: str
-    category_id: int
-
-class WordUpdate(BaseModel):
-    new_word: str
-
-class WordResponse(BaseModel):
-    id: int
-    word: str
-    category_id: int
-
-class ScoreResponse(BaseModel):
-    player_name: str
-    wins: int
-
-# --- INITIAL ENDPOINTS (Swagger Functionality) ---
-
-# --- CATEGORY ENDPOINTS ---
-
-@app.get("/categories", response_model=List[CategoryResponse], tags=["Categories"])
-def get_categories(db: sqlite3.Connection = Depends(get_db)):
-    """Retrieve all categories."""
-    return db.execute("SELECT * FROM categories").fetchall()
-
-@app.post("/categories", response_model=CategoryResponse, tags=["Categories"])
-def create_category(category: CategoryBase, db: sqlite3.Connection = Depends(get_db)):
-    """Create a new category."""
-    try:
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO categories (name) VALUES (?)", (category.name.lower().strip(),))
-        db.commit()
-        return {"id": cursor.lastrowid, "name": category.name}
-    except sqlite3.IntegrityError:
-        raise HTTPException(status_code=400, detail="Category already exists")
-
-@app.delete("/categories/{cat_id}", tags=["Categories"])
-def delete_category(cat_id: int, db: sqlite3.Connection = Depends(get_db)):
-    """Delete a category and all its words."""
-    cursor = db.cursor()
-    cursor.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
-    db.commit()
-    return {"message": "Category deleted"}
-
-# --- WORD CRUD ENDPOINTS ---
-
-@app.post("/words", response_model=WordResponse, tags=["Words"])
-def add_word(word_data: WordCreate, db: sqlite3.Connection = Depends(get_db)):
-    """Add a new word to a specific category."""
-    cursor = db.cursor()
-    cursor.execute("INSERT INTO words (category_id, word) VALUES (?, ?)", 
-                   (word_data.category_id, word_data.word.lower().strip()))
-    db.commit()
-    return {"id": cursor.lastrowid, **word_data.dict()}
-
-@app.put("/words/{word_id}", tags=["Words"])
-def update_word(word_id: int, data: WordUpdate, db: sqlite3.Connection = Depends(get_db)):
-    """Edit an existing word."""
-    cursor = db.cursor()
-    cursor.execute("UPDATE words SET word = ? WHERE id = ?", (data.new_word.lower().strip(), word_id))
-    db.commit()
-    return {"message": "Word updated"}
-
-@app.delete("/words/{word_id}", tags=["Words"])
-def remove_word(word_id: int, db: sqlite3.Connection = Depends(get_db)):
-    """Delete a word from a category."""
-    db.execute("DELETE FROM words WHERE id = ?", (word_id,))
-    db.commit()
-    return {"message": "Word deleted"}
-
-# --- GAME & LEADERBOARD ---
-@app.get("/play/{category_id}", tags=["Game"])
-def play_game(category_id: int, db: sqlite3.Connection = Depends(get_db)):
-    """Get a random word and category name to start a game."""
-    cursor = db.cursor()
-    cursor.execute("SELECT name FROM categories WHERE id = ?", (category_id,))
-    cat = cursor.fetchone()
-    if not cat: raise HTTPException(status_code=404, detail="Category not found")
-    
-    cursor.execute("SELECT word FROM words WHERE category_id = ? ORDER BY RANDOM() LIMIT 1", (category_id,))
-    word = cursor.fetchone()
-    if not word: raise HTTPException(status_code=404, detail="Category is empty")
-    
-    return {"category": cat["name"], "word_to_guess": word["word"]}
-
-@app.get("/leaderboard", response_model=List[ScoreResponse], tags=["Leaderboard"])
-def leaderboard(db: sqlite3.Connection = Depends(get_db)):
-    """Fetch the high score dashboard."""
-    return db.execute("SELECT * FROM scores ORDER BY wins DESC").fetchall()
-
-
-
-# --- STAGES AND PLAY_HANGMAN FUNCTIONS ---
-stages = [  # final state: head, torso, both arms, and both legs
-    """
-    --------
-    |      |
-    |      O
-    |     \\|/
-    |      |
-    |     / \\
-    -
-    """,
-    # head, torso, both arms, and one leg
-    """
-    --------
-    |      |
-    |      O
-    |     \\|/
-    |      |
-    |     / 
-    -
-    """,
-    # head, torso, and both arms
-    """
-    --------
-    |      |
-    |      O
-    |     \\|/
-    |      |
-    |      
-    -
-    """,
-    # head, torso, and one arm
-    """
-    --------
-    |      |
-    |      O
-    |     \\|
-    |      |
-    |     
-    -
-    """,
-    # head and torso
-    """
-    --------
-    |      |
-    |      O
-    |      |
-    |      |
-    |     
-    -
-    """,
-    # head only
-    """
-    --------
-    |      |
-    |      O
-    |    
-    |      
-    |     
-    -
-    """,
-    # initial empty state
-    """
-    --------
-    |      |
-    |      
-    |    
-    |      
-    |     
-    -
-    """
-]
-
-# --- CORE FUNCTIONS ---
-
-def play_hangman():
-    
-    print("\n--- Welcome to Hangman! ---")
-    player_name = input("Enter your name: ").strip().capitalize()
-    
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    # Get categories from DB
-    cursor.execute("SELECT id, name FROM categories")
-    categories = cursor.fetchall() # Returns a list of tuples [(id, name), ...]
-
-    print("\nChoose a category:")
-    for i, cat in enumerate(categories, 1):
-        print(f"{i}. {cat[1].capitalize()}")
-
-    choice = input("Enter the number: ")
-    if not choice.isdigit() or not (1 <= int(choice) <= len(categories)):
-        print("Invalid selection.")
-        conn.close()
-        return
-
-    selected_cat_id = categories[int(choice) - 1][0]
-    selected_cat_name = categories[int(choice) - 1][1]
-
-    # Get random word from DB for selected category
-    cursor.execute("SELECT word FROM words WHERE category_id = ? ORDER BY RANDOM() LIMIT 1", (selected_cat_id,))
-    result = cursor.fetchone()
-
-    if not result:
-        print(f"The {selected_cat_name} category is empty! Add words first.")
-        conn.close()
-        return
-
-    chosen_word = result[0].lower()
-    conn.close() # Close early as we have our word
-
-    lives = 6
-    placeholder = '_' * len(chosen_word)
-    correct_letters = []
-    game_over = False
-
-    print(f"\nCategory: {selected_cat_name.capitalize()}")
-    print(placeholder)
-
-    while not game_over:
-        guess = input("Guess a letter: ").lower()    
-        display = ''
-
-        for letter in chosen_word:
-            if letter == guess or letter in correct_letters:
-                display += letter
-                if letter == guess and guess not in correct_letters:
-                    correct_letters.append(guess)
-            else:
-                display += '_' 
-
-        if guess not in chosen_word:
-            lives -= 1
-            print(f"Wrong! {lives} lives left.")
-
-        print(stages[lives])
-        print(display)
-        if lives == 0:
-                game_over = True
-                print("\n You lose! \n ")
-                print(f"The answer was : {chosen_word}\n")
-        if chosen_word == display:
-            game_over = True
-            print(f"\n~~ You win, {player_name}! ~~")
-
-            # UPDATE SCORE IN SQLITE
-            conn = sqlite3.connect(DB_NAME)
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO scores (player_name, wins) VALUES (?, 1)
-                ON CONFLICT(player_name) DO UPDATE SET wins = wins + 1
-            """, (player_name,))
-            conn.commit()
-            
-            cursor.execute("SELECT wins FROM scores WHERE player_name = ?", (player_name,))
-            print(f"Total wins for {player_name}: {cursor.fetchone()[0]}")
-            conn.close()
-
-def view_leaderboard():
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT player_name, wins FROM scores ORDER BY wins DESC")
-    rows = cursor.fetchall()
-    conn.close()
-
-    print("\n==== LEADERBOARD ====")
-    if not rows:
-        print("No scores recorded yet.")
-    else:
-        print(f"{'Player':<15} | {'Wins':<5}")
-        print("-" * 25)
-        for name, wins in rows:
-            print(f"{name:<15} | {wins:<5}")
-    print("=====================")
-
-def manage_words():
-    global words
-    print("\n--- Word Management ---")
-    print("1. Create New Category (Create)")
-    print("2. Add Word (Create)")
-    print("3. View Words (Read)")
-    print("4. Edit Word (Update)")
-    print("5. Remove Word (Delete)")
-    print("6. Remove Category (Delete)")
-    print("7. Back to Main Menu")
-    
-    choice = input("\nSelect an option: ")
+# 2. Add Word (Create)
+@app.post("/words/", tags=["Words"])
+def add_word(word_data: WordCreate):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
+    
+    try:
+        cursor.execute("INSERT INTO words (category_id, word) VALUES (?, ?)", 
+                       (word_data.category_id, word_data.word.lower().strip()))
+        conn.commit()
+        return {"message": f"Word '{word_data.word}' added successfully!"}
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid Category ID.")
+    finally:
+        conn.close()
 
+# 3. View Words (Read)
+@app.get("/words/", tags=["Words"])
+def view_words():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT c.id, c.name, GROUP_CONCAT(w.id || ':' || w.word, ', ') 
+        FROM categories c 
+        LEFT JOIN words w ON c.id = w.category_id 
+        GROUP BY c.id, c.name
+    """)
+    
+    # Format the data nicely into a dictionary mapping category to its words
+    result = []
+    for cat_id, cat_name, words_concat in cursor.fetchall():
+        if words_concat:
+            # Splits the concatenated string into a list of dicts with ID and Word
+            word_list = [{"id": int(item.split(':')[0]), "word": item.split(':')[1]} for item in words_concat.split(', ')]
+        else:
+            word_list = []
+        # Append a structured dictionary for each category
+        result.append({
+            "category_id": cat_id,
+            "category_name": cat_name,
+            "words": word_list
+        })
+            
+    conn.close()
+    return result
 
-    # OPTION 1: CREATE CATEGORY
-    if choice == '1':
-        print("\n === Create a New Category (Create) ===")
-        new_cat = input("New category name: ").lower().strip()
-        try:
-            cursor.execute("INSERT INTO categories (name) VALUES (?)", (new_cat,))
-            conn.commit()
-            print(f"Category '{new_cat.capitalize()}' created!")
-        except sqlite3.IntegrityError:
-            print("Category already exists.")
-
-    # OPTION 2: ADD WORD
-    elif choice == '2':
-        print("\n === Add Word (Create) ===")
-        cursor.execute("SELECT id, name FROM categories")
-        cats = cursor.fetchall()
-        for i, c in enumerate(cats, 1): print(f"{i}. {c[1].capitalize()}")
+# 4. Edit Word (Update)
+@app.put("/words/{word_id}", tags=["Words"])
+def edit_word(word_id: int, word_data: WordUpdate):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE words SET word = ? WHERE id = ?", (word_data.word.lower().strip(), word_id))
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Word not found.")
         
-        c_choice = input("Select category number: ")
-        if c_choice.isdigit() and 1 <= int(c_choice) <= len(cats):
-            cat_id = cats[int(c_choice)-1][0]
-            new_w = input("Enter new word: ").strip().lower()
-            cursor.execute("INSERT INTO words (category_id, word) VALUES (?, ?)", (cat_id, new_w))
-            conn.commit()
-            print(f"Added '{new_w}'!")
+    conn.commit()
+    conn.close()
+    return {"message": "Word updated successfully."}
 
-    # OPTION 3: VIEW WORDS
-    elif choice == '3':
-        print("\n=== View Words (Read) ===")
+# 5. Remove Word (Delete)
+@app.delete("/words/{word_id}", tags=["Words"])
+def remove_word(word_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("DELETE FROM words WHERE id = ?", (word_id,))
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Word not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": "Word deleted successfully."}
+
+# 8. Update the category 
+# Update Category (Update)
+@app.put("/categories/{category_id}", tags=["Categories"])
+def update_category(category_id: int, category_data: CategoryUpdate):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Clean the input to match your terminal logic
+    new_name = category_data.name.lower().strip()
+    
+    try:
+        cursor.execute("UPDATE categories SET name = ? WHERE id = ?", (new_name, category_id))
+        
+        # Check if the category actually existed
+        if cursor.rowcount == 0:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Category not found.")
+            
+        conn.commit()
+        return {"message": f"Category renamed to '{new_name.capitalize()}' successfully!"}
+        
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="A category with that name already exists.")
+    finally:
+        conn.close()
+
+# 6. Remove Category (Delete)
+@app.delete("/categories/{category_id}", tags=["Categories"])
+def remove_category(category_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON") # Crucial for cascading deletes
+    
+    cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Category not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": "Category and all associated words deleted successfully."}
+
+#7. View Categories (Read)
+@app.get("/categories/", tags=["Categories"])
+def view_categories():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, name FROM categories")
+    # Format the result into a clean list of dictionaries
+    categories = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+    
+    conn.close()
+    return categories
+
+
+
+
+# --- USER (SCORE) ENDPOINTS ---
+
+# 1. Create User (Create)
+@app.post("/users/", tags=["Users"])
+def create_user(user: UserCreate):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    try:
+        # We use capitalize() to keep naming consistent with your terminal game logic
+        clean_name = user.player_name.strip().capitalize()
+        cursor.execute("INSERT INTO scores (player_name, wins) VALUES (?, ?)", (clean_name, user.wins))
+        conn.commit()
+        return {"message": f"User '{clean_name}' created with {user.wins} wins!"}
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="User already exists.")
+    finally:
+        conn.close()
+
+# 2. View Users & Points (Read)
+@app.get("/users/", tags=["Users"])
+def view_users():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Ordering by wins descending to act as a leaderboard
+    cursor.execute("SELECT player_name, wins FROM scores ORDER BY wins DESC")
+    
+    # Format the result into a clean list of dictionaries
+    users = [{"player_name": row[0], "wins": row[1]} for row in cursor.fetchall()]
+    
+    conn.close()
+    return users
+
+# 3. Update User Name & Points (Update)
+@app.put("/users/{player_name}", tags=["Users"])
+def update_user(player_name: str, update_data: UserUpdate):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # First, verify the user exists and get their current data
+    clean_target_name = player_name.strip().capitalize()
+    cursor.execute("SELECT player_name, wins FROM scores WHERE player_name = ?", (clean_target_name,))
+    current_user = cursor.fetchone()
+    
+    if not current_user:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    # Determine what is being updated (fallback to current values if not provided)
+    new_name = update_data.new_player_name.strip().capitalize() if update_data.new_player_name else current_user[0]
+    new_wins = update_data.wins if update_data.wins is not None else current_user[1]
+    
+    try:
         cursor.execute("""
-            SELECT c.name, GROUP_CONCAT(w.word, ', ') 
-            FROM categories c 
-            LEFT JOIN words w ON c.id = w.category_id 
-            GROUP BY c.name
-        """)
-        for cat, w_list in cursor.fetchall():
-            print(f"{cat.capitalize()}: {w_list if w_list else 'Empty'}")
+            UPDATE scores 
+            SET player_name = ?, wins = ? 
+            WHERE player_name = ?
+        """, (new_name, new_wins, clean_target_name))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="A user with that new name already exists.")
+    finally:
+        conn.close()
+        
+    return {"message": f"User updated successfully.", "current_state": {"player_name": new_name, "wins": new_wins}}
 
-    elif choice == '4':
-        print("\n=== Edit Word (Update) ===")
-        cursor.execute("SELECT id, name FROM categories")
-        cats = cursor.fetchall()
-        for i, c in enumerate(cats, 1): print(f"{i}. {c[1].capitalize()}")
-        c_choice = input("Category number: ")
-        if c_choice.isdigit() and 1 <= int(c_choice) <= len(cats):
-            cat_id = cats[int(c_choice)-1][0]
-            cursor.execute("SELECT id, word FROM words WHERE category_id = ?", (cat_id,))
-            word_rows = cursor.fetchall()
-            for i, w in enumerate(word_rows, 1): print(f"{i}. {w[1]}")
-            
-            w_choice = input("Select word number to edit: ")
-            if w_choice.isdigit() and 1 <= int(w_choice) <= len(word_rows):
-                word_id = word_rows[int(w_choice)-1][0]
-                new_val = input("New word value: ").strip().lower()
-                cursor.execute("UPDATE words SET word = ? WHERE id = ?", (new_val, word_id))
-                conn.commit()
-                print("Updated!")
-
-
-    # OPTION 5: REMOVE WORD (UPDATED DYNAMIC LOGIC)
-    elif choice == '5':
-        print("\n=== Remove Word (Delete) ===")
-        cursor.execute("SELECT id, name FROM categories")
-        cats = cursor.fetchall()
-        for i, c in enumerate(cats, 1): print(f"{i}. {c[1].capitalize()}")
-        c_choice = input("Category number: ")
-        if c_choice.isdigit() and 1 <= int(c_choice) <= len(cats):
-            cat_id = cats[int(c_choice)-1][0]
-            cursor.execute("SELECT id, word FROM words WHERE category_id = ?", (cat_id,))
-            word_rows = cursor.fetchall()
-            for i, w in enumerate(word_rows, 1): print(f"{i}. {w[1]}")
-            
-            w_choice = input("Select word number to remove: ")
-            if w_choice.isdigit() and 1 <= int(w_choice) <= len(word_rows):
-                word_id = word_rows[int(w_choice)-1][0]
-                cursor.execute("DELETE FROM words WHERE id = ?", (word_id,))
-                conn.commit()
-                print("Removed.")
-
-    # OPTION 6: REMOVE Category (UPDATED DYNAMIC LOGIC)
-    elif choice == '6':
-        print("\n=== Remove Category (Delete) ===")
-        cursor.execute("SELECT id, name FROM categories")
-        cats = cursor.fetchall()
-        for i, c in enumerate(cats, 1): print(f"{i}. {c[1].capitalize()}")
-        c_choice = input("Select category number to DELETE: ")
-        if c_choice.isdigit() and 1 <= int(c_choice) <= len(cats):
-            cat_id = cats[int(c_choice)-1][0]
-            cursor.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
-            conn.commit()
-            print("Category and all its words deleted.")
-
-    conn.close()    
-
-# --- THE MAIN CONTROLLER ---
-while True:
-    print("\n==== HANGMAN SYSTEM ====")
-    print("1. Play Hangman")
-    print("2. View Leaderboard") # New Option
-    print("3. Manage Words")
-    print("4. Exit")
+# 4. Delete User (Delete)
+@app.delete("/users/{player_name}", tags=["Users"])
+def delete_user(player_name: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
     
-    main_choice = input("What would you like to do? ")
+    clean_target_name = player_name.strip().capitalize()
+    cursor.execute("DELETE FROM scores WHERE player_name = ?", (clean_target_name,))
     
-    if main_choice == '1':
-        play_hangman()
-    elif main_choice == '2':
-        view_leaderboard()
-    elif main_choice == '3':
-        manage_words()
-    elif main_choice == '4':
-        print("Goodbye!")
-        break
-    else:
-        print("Invalid choice, try again.")
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": f"User '{clean_target_name}' deleted successfully."}
+
+@app.get("/game/word/{category_id}", tags=["Game"])
+def get_random_word(category_id: int):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT word FROM words WHERE category_id = ?",
+        (category_id,)
+    )
+    words = cursor.fetchall()
+
+    if not words:
+        conn.close()
+        raise HTTPException(status_code=404, detail="No words found for this category.")
+
+    # Pick random word
+    chosen_word = random.choice(words)[0]
+
+    conn.close()
+
+    return {
+        "category_id": category_id,
+        "word": chosen_word
+    }   
+
+@app.post("/game/win", tags=["Game"])
+def record_win(player_name: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+
+    clean_name = player_name.strip().capitalize()
+
+    cursor.execute("""
+        INSERT INTO scores (player_name, wins)
+        VALUES (?, 1)
+        ON CONFLICT(player_name)
+        DO UPDATE SET wins = wins + 1
+    """, (clean_name,))
+
+    conn.commit()
+    conn.close()
+
+    return {"message": f"{clean_name} win recorded!"}
