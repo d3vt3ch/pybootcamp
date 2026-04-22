@@ -1,0 +1,31 @@
+{
+    "fruits": [
+        "apple",
+        "banana",
+        "cherry",
+        "date",
+        "fig",
+        "grape"
+    ],
+    "animals": [
+        "cat",
+        "dog",
+        "elephant",
+        "giraffe",
+        "lion",
+        "tiger"
+    ],
+    "countries": [
+        "usa",
+        "canada",
+        "brazil",
+        "india",
+        "china",
+        "australia"
+    ],
+    "cars": [
+        "audi",
+        "toyota",
+        "honda"
+    ]
+}
