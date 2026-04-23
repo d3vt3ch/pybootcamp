@@ -37,13 +37,60 @@ def init_db():
         )
     """)
 
+    cursor.execute("PRAGMA table_info(words)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if "hint" not in columns:
+        cursor.execute("ALTER TABLE words ADD COLUMN hint TEXT")
+        cursor.execute("SELECT id, word FROM words WHERE hint IS NULL")
+
+        for word_id, word in cursor.fetchall():
+            hint = f"A word related to {word}"  # simple fallback
+            cursor.execute("UPDATE words SET hint = ? WHERE id = ?", (hint, word_id))
+
+        conn.commit()
+        conn.close()
+
+
     cursor.execute("SELECT COUNT(*) FROM categories")
     if cursor.fetchone()[0] == 0:
         default_words = {
-            "fruits": ["apple", "banana", "cherry", "date", "fig", "grape"],
-            "animals": ["cat", "dog", "elephant", "giraffe", "lion", "tiger"],
-            "countries": ["usa", "canada", "brazil", "india", "china", "australia"]
+            "fruits": [
+                ("apple", "Sweet fruit, usually red or green"),
+                ("banana", "Long yellow fruit"),
+                ("cherry", "Small red fruit"),
+                ("date", "Sweet brown fruit often from Middle East"),
+                ("fig", "Soft fruit with many seeds inside"),
+                ("grape", "Small round fruit, used for wine")
+            ],
+            "animals": [
+                ("cat", "Small pet that says meow"),
+                ("dog", "Man’s best friend"),
+                ("elephant", "Large animal with trunk"),
+                ("giraffe", "Animal with long neck"),
+                ("lion", "King of the jungle"),
+                ("tiger", "Striped big cat")
+            ],
+            "countries": [
+                ("usa", "Country in North America"),
+                ("canada", "Cold country above USA"),
+                ("brazil", "Famous for football"),
+                ("india", "Second most populous country"),
+                ("china", "Most populous country"),
+                ("australia", "Country with kangaroo")
+            ]
         }
+
+        for cat, word_list in default_words.items():
+            cursor.execute("INSERT INTO categories (name) VALUES (?)", (cat,))
+            cat_id = cursor.lastrowid
+
+            for w, hint in word_list:
+                cursor.execute(
+                    "INSERT INTO words (category_id, word, hint) VALUES (?, ?, ?)",
+                    (cat_id, w, hint)
+                )
+
         for cat, word_list in default_words.items():
             cursor.execute("INSERT INTO categories (name) VALUES (?)", (cat,))
             cat_id = cursor.lastrowid
@@ -52,6 +99,8 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+
 
 # Initialize DB at startup
 init_db()
@@ -69,6 +118,7 @@ class CategoryUpdate(BaseModel):
 class WordCreate(BaseModel):
     category_id: int
     word: str
+    hint: str   # NEW
 
 class WordUpdate(BaseModel):
     word: str
@@ -162,8 +212,10 @@ def add_word(word_data: WordCreate):
     cursor.execute("PRAGMA foreign_keys = ON")
     
     try:
-        cursor.execute("INSERT INTO words (category_id, word) VALUES (?, ?)", 
-                       (word_data.category_id, word_data.word.lower().strip()))
+        cursor.execute(
+        "INSERT INTO words (category_id, word, hint) VALUES (?, ?, ?)",
+        (word_data.category_id, word_data.word.lower().strip(), word_data.hint)
+        )
         conn.commit()
         return {"message": f"Word '{word_data.word}' added successfully!"}
     except sqlite3.IntegrityError:
@@ -179,30 +231,33 @@ def view_words():
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT c.id, c.name, GROUP_CONCAT(w.id || ':' || w.word, ', ') 
-        FROM categories c 
-        LEFT JOIN words w ON c.id = w.category_id 
-        GROUP BY c.id, c.name
+        SELECT c.id, c.name, w.id, w.word, w.hint
+        FROM categories c
+        LEFT JOIN words w ON c.id = w.category_id
+        ORDER BY c.id
     """)
     
+    
     # Format the data nicely into a dictionary mapping category to its words
-    result = []
-    for cat_id, cat_name, words_concat in cursor.fetchall():
-        if words_concat:
-            # Splits the concatenated string into a list of dicts with ID and Word
-            word_list = [{"id": int(item.split(':')[0]), "word": item.split(':')[1]} for item in words_concat.split(', ')]
-        else:
-            word_list = []
-        # Append a structured dictionary for each category
-        result.append({
-            "category_id": cat_id,
-            "category_name": cat_name,
-            "words": word_list
-        })
-            
-    conn.close()
-    return result
+    result = {}
+    for cat_id, cat_name, word_id, word, hint in cursor.fetchall():
+        if cat_id not in result:
+            result[cat_id] = {
+                "category_id": cat_id,
+                "category_name": cat_name,
+                "words": []
+            }
 
+        if word_id:
+            result[cat_id]["words"].append({
+                "id": word_id,
+                "word": word,
+                "hint": hint
+            })
+
+    conn.close()
+    return list(result.values())
+    
 # 7. Edit Word (Update)
 @app.put("/words/{word_id}", tags=["Words"])
 def edit_word(word_id: int, word_data: WordUpdate):
@@ -327,7 +382,7 @@ def get_random_word(category_id: int):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT word FROM words WHERE category_id = ?",
+        "SELECT word, hint FROM words WHERE category_id = ?",
         (category_id,)
     )
     words = cursor.fetchall()
@@ -337,14 +392,16 @@ def get_random_word(category_id: int):
         raise HTTPException(status_code=404, detail="No words found for this category.")
 
     # Pick random word
-    chosen_word = random.choice(words)[0]
+    chosen_word, hint = random.choice(words)
 
     conn.close()
 
     return {
         "category_id": category_id,
-        "word": chosen_word
-    }   
+        "word": chosen_word,
+        "hint": hint
+    }
+       
 
 @app.post("/game/win", tags=["Game"])
 def record_win(player_name: str):
