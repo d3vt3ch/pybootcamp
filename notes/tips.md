@@ -131,8 +131,14 @@ pip install python-dotenv
 ## RUN this in two terminals
 
 ```bash
-streamlit run app.py
+source myvenv/bin/activate
+pip install fastapi uvicorn
+pip install pydantic
 
 uvicorn hangman_v5:app
+streamlit run app.py
 
+or
+uvicorn hangman_v5:app --host 0.0.0.0 --port 8000
+streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 ```

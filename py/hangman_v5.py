@@ -26,6 +26,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             category_id INTEGER,
             word TEXT NOT NULL,
+            hint TEXT,
             FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
         )
     """)

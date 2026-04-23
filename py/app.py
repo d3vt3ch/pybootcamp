@@ -86,6 +86,10 @@ if 'guessed_letters' not in st.session_state:
 if 'player_name' not in st.session_state:
     st.session_state.player_name = ""
 
+# Fetch category name
+if 'category_name' not in st.session_state:  
+    st.session_state.category_name = ""
+
 # --- HELPER FUNCTIONS ---
 def fetch_categories():
     try:
@@ -96,7 +100,7 @@ def fetch_categories():
         return []
     return []
 
-def start_game(player_name, category_id):
+def start_game(player_name, category_id, category_name):
     # Fetch random word from the new endpoint
     response = requests.get(f"{API_BASE_URL}/game/word/{category_id}")
     if response.status_code == 200:
@@ -105,6 +109,8 @@ def start_game(player_name, category_id):
         st.session_state.game_active = True
         st.session_state.lives = 6
         st.session_state.guessed_letters = set()
+    # category name
+        st.session_state.category_name = category_name
     else:
         st.error("Failed to fetch word. Category might be empty.")
 
@@ -152,13 +158,21 @@ if page == "Play Hangman":
                 if player_name.strip() == "":
                     st.warning("Please enter your name first!")
                 else:
-                    start_game(player_name, cat_options[selected_cat_name])
+                    start_game(player_name, cat_options[selected_cat_name], selected_cat_name)
                     st.rerun()
         else:
             st.warning("No categories found. Please add some in 'Manage Data' or ensure backend is running.")
 
     # ACTIVE GAME LOOP
     else:
+        st.markdown(
+            f"""
+            <div style='text-align: center; padding: 10px; font-size: 20px;'>
+            🎯 The word in category: <span style='color: #00c4ff; font-weight: bold;'>{st.session_state.category_name}</span>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         st.write(f"**Player:** {st.session_state.player_name} | **Lives Left:** {st.session_state.lives}")
         
         # Display Hangman Art
