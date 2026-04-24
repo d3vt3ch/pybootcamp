@@ -91,11 +91,7 @@ def init_db():
                     (cat_id, w, hint)
                 )
 
-        for cat, word_list in default_words.items():
-            cursor.execute("INSERT INTO categories (name) VALUES (?)", (cat,))
-            cat_id = cursor.lastrowid
-            for w in word_list:
-                cursor.execute("INSERT INTO words (category_id, word) VALUES (?, ?)", (cat_id, w))
+        
     
     conn.commit()
     conn.close()
