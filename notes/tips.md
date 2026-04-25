@@ -135,6 +135,9 @@ source myvenv/bin/activate
 pip install fastapi uvicorn
 pip install pydantic
 
+
+
+source myvenv/bin/activate
 uvicorn hangman_v5:app
 streamlit run app.py
 
