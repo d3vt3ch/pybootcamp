@@ -48,8 +48,8 @@ This is about becoming **more capable, adaptable, and valuable**.
 | 14 | Modules libraries | ✅ Completed |
 | 15 | Sqlite | ✅ Completed |
 | 16 | Mongo | ✅ Completed |
-| 17 | Fastsql | ⏳ Pending |
-| 18 | fastmongo | ⏳ Pending |
+| 17 | Fastsql | ✅ Completed |
+| 18 | fastmongo | ✅ Completed |
 | 19 | streamlit | ✅ Completed |
 | 20 | fullstack RAG backend | ⏳ Pending |
 | 21 | fullstack RAG frontend | ⏳ Pending |
