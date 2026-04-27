@@ -95,6 +95,9 @@ if 'player_name' not in st.session_state:
 if 'hint' not in st.session_state:
     st.session_state.hint = ""
 
+if 'win_recorded' not in st.session_state:
+    st.session_state.win_recorded = False
+
 # Fetch category name
 if 'category_name' not in st.session_state:  
     st.session_state.category_name = ""
@@ -120,6 +123,8 @@ def start_game(player_name, category_id, category_name):
         st.session_state.guessed_letters = set()
         st.session_state.category_name = category_name # update category name
         st.session_state.hint = response.json()["hint"] # update hint
+        st.session_state.win_recorded = False  # Reset for the new word
+        st.session_state.game_active = True
     else:
         st.error("Failed to fetch word. Category might be empty.")
 
@@ -150,15 +155,22 @@ if not st.session_state.logged_in:
         reg_user = st.text_input("Username")
         reg_email = st.text_input("Email")
         reg_pass = st.text_input("Password", type="password")
-        reg_role = st.selectbox("I am a:", ["player", "admin"])
         
         if st.button("Register"):
-            payload = {"username": reg_user, "email": reg_email, "password": reg_pass, "role": reg_role}
-            res = requests.post(f"{API_BASE_URL}/auth/register", json=payload)
-            if res.status_code == 200:
-                st.success("Registration successful! Please switch to Login.")
-            else:
-                st.error(res.json().get("detail", "Registration failed"))
+            payload = {"username": reg_user, "email": reg_email, "password": reg_pass}
+            try:
+                res = requests.post(f"{API_BASE_URL}/auth/register", json=payload)
+                
+                # Defensive check: only parse JSON if the response is successful
+                if res.status_code == 200:
+                    st.success(res.json().get("message", "Success!"))
+                    st.info("Please switch to Login mode now.")
+                else:
+                    # If the server crashed, don't try to read .json()
+                    st.error(f"Server Error ({res.status_code}): Please check API terminal.")
+            except Exception as e:
+                st.error(f"Connection failed: {e}")
+
 
     else:
         st.title("👋 Welcome Back")
@@ -271,11 +283,14 @@ if page == "Play Hangman":
                 
         elif word_is_guessed:
             st.success(f"🎉 You win, {st.session_state.player_name}! 🎉")
-            st.balloons()
-            # Record win only once per game
-            record_win(st.session_state.player_name)
+            if not st.session_state.win_recorded:
+                record_win(st.session_state.player_name)
+                st.session_state.win_recorded = True # Lock the switch
+                st.balloons()
+            
             if st.button("Play Again"):
                 st.session_state.game_active = False
+                st.session_state.win_recorded = False # Prepare for next game
                 st.rerun()
                 
         else:
@@ -315,7 +330,8 @@ elif page == "Manage Data":
         st.stop()
         
     st.title("⚙️ Manage Data")
-    tab1, tab2 = st.tabs(["Categories", "Words"])
+    # Added a third tab for User Management
+    tab1, tab2, tab3, tab4 = st.tabs(["Categories", "Words", "User Permissions","Leaderboard Tools"])
     
     with tab1:
         st.subheader("Add New Category")
@@ -374,3 +390,112 @@ elif page == "Manage Data":
                 
         except:
             st.error("Could not fetch words.")
+
+    with tab3:
+        st.subheader("👥 Account Management")
+        
+        res = requests.get(f"{API_BASE_URL}/auth/accounts")
+        if res.status_code == 200:
+            accounts = res.json()
+            st.dataframe(accounts, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            # --- ACTION SECTION ---
+            st.subheader("🛠️ User Actions")
+            
+            # Create a dropdown of all users EXCEPT the currently logged-in admin
+            other_users = [a["username"] for a in accounts if a["username"] != st.session_state.username]
+            
+            if other_users:
+                selected_user = st.selectbox("Select a User to Manage:", other_users)
+                
+                # Find the selected user's current role to decide which button to show
+                current_role = next(item["role"] for item in accounts if item["username"] == selected_user)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # Show Promote button only if they are a player
+                    if current_role == "player":
+                        if st.button("🚀 Promote to Admin", use_container_width=True):
+                            res = requests.put(f"{API_BASE_URL}/auth/promote/{selected_user}")
+                            st.success(f"{selected_user} promoted!")
+                            st.rerun()
+                    # Show Demote button only if they are an admin
+                    else:
+                        if st.button("📉 Demote to Player", use_container_width=True):
+                            res = requests.put(f"{API_BASE_URL}/auth/demote/{selected_user}")
+                            st.warning(f"{selected_user} demoted.")
+                            st.rerun()
+
+                with col2:
+                    # Danger Zone: Delete Account
+                    if st.button("🗑️ Delete Account", type="secondary", use_container_width=True):
+                        # Simple confirmation check
+                        st.session_state.confirm_delete = selected_user
+                
+                # Confirmation logic for deletion
+                if 'confirm_delete' in st.session_state and st.session_state.confirm_delete == selected_user:
+                    st.warning(f"Are you sure you want to permanently delete {selected_user}?")
+                    if st.button(f"Yes, Delete {selected_user} Permanently"):
+                        del_res = requests.delete(f"{API_BASE_URL}/auth/accounts/{selected_user}")
+                        if del_res.status_code == 200:
+                            st.success("Account deleted.")
+                            del st.session_state.confirm_delete
+                            st.rerun()
+                
+                # Inside your 'with tab3:' block, under 'col3'
+                with col3:
+                    st.write("🔑 **Security**")
+                    new_password = st.text_input("New Password", type="password", key=f"pwd_{selected_user}")
+                    if st.button("Reset Password", use_container_width=True):
+                        if new_password:
+                            reset_res = requests.put(
+                                f"{API_BASE_URL}/auth/reset-password/{selected_user}",
+                                json={"username": selected_user, "password": new_password}
+                            )
+                            if reset_res.status_code == 200:
+                                st.success(f"Password reset for {selected_user}!")
+                            else:
+                                st.error("Reset failed.")
+                        else:
+                            st.warning("Enter a new password first.")
+
+            else:
+                st.info("No other users found in the system.")
+        else:
+            st.error("Could not fetch account list.")
+
+    with tab4:
+        st.subheader("🏆 Leaderboard Management")
+        st.info("Use this section to manage the public scoreboard. Be careful: these actions are permanent.")
+        
+        st.divider()
+        
+        st.write("### Danger Zone")
+        # Creating a confirmation flow for resetting scores
+        if "confirm_reset" not in st.session_state:
+            st.session_state.confirm_reset = False
+
+        if not st.session_state.confirm_reset:
+            if st.button("🚨 Reset Entire Scoreboard", type="primary", use_container_width=True):
+                st.session_state.confirm_reset = True
+                st.rerun()
+        else:
+            st.warning("⚠️ Are you absolutely sure? This will delete all player wins forever.")
+            col_yes, col_no = st.columns(2)
+            
+            with col_yes:
+                if st.button("Yes, Clear Everything", type="primary", use_container_width=True):
+                    res = requests.delete(f"{API_BASE_URL}/game/reset-scores")
+                    if res.status_code == 200:
+                        st.success("The scoreboard is now clean!")
+                        st.session_state.confirm_reset = False
+                        st.balloons() # A little celebration for a fresh start
+                        st.rerun()
+            
+            with col_no:
+                if st.button("Cancel", use_container_width=True):
+                    st.session_state.confirm_reset = False
+                    st.rerun()

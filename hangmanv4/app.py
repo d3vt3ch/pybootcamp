@@ -150,13 +150,13 @@ if not st.session_state.logged_in:
         reg_user = st.text_input("Username")
         reg_email = st.text_input("Email")
         reg_pass = st.text_input("Password", type="password")
-        reg_role = st.selectbox("I am a:", ["player", "admin"])
         
         if st.button("Register"):
-            payload = {"username": reg_user, "email": reg_email, "password": reg_pass, "role": reg_role}
+            payload = {"username": reg_user, "email": reg_email, "password": reg_pass}
             res = requests.post(f"{API_BASE_URL}/auth/register", json=payload)
             if res.status_code == 200:
-                st.success("Registration successful! Please switch to Login.")
+                st.success(res.json()["message"])
+                st.info("Please switch to Login mode now.")
             else:
                 st.error(res.json().get("detail", "Registration failed"))
 
@@ -315,7 +315,8 @@ elif page == "Manage Data":
         st.stop()
         
     st.title("⚙️ Manage Data")
-    tab1, tab2 = st.tabs(["Categories", "Words"])
+    # Added a third tab for User Management
+    tab1, tab2, tab3 = st.tabs(["Categories", "Words", "User Permissions"])
     
     with tab1:
         st.subheader("Add New Category")
@@ -374,3 +375,61 @@ elif page == "Manage Data":
                 
         except:
             st.error("Could not fetch words.")
+
+    with tab3:
+        st.subheader("👥 Account Management")
+        
+        res = requests.get(f"{API_BASE_URL}/auth/accounts")
+        if res.status_code == 200:
+            accounts = res.json()
+            st.dataframe(accounts, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            
+            # --- ACTION SECTION ---
+            st.subheader("🛠️ User Actions")
+            
+            # Create a dropdown of all users EXCEPT the currently logged-in admin
+            other_users = [a["username"] for a in accounts if a["username"] != st.session_state.username]
+            
+            if other_users:
+                selected_user = st.selectbox("Select a User to Manage:", other_users)
+                
+                # Find the selected user's current role to decide which button to show
+                current_role = next(item["role"] for item in accounts if item["username"] == selected_user)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # Show Promote button only if they are a player
+                    if current_role == "player":
+                        if st.button("🚀 Promote to Admin", use_container_width=True):
+                            res = requests.put(f"{API_BASE_URL}/auth/promote/{selected_user}")
+                            st.success(f"{selected_user} promoted!")
+                            st.rerun()
+                    # Show Demote button only if they are an admin
+                    else:
+                        if st.button("📉 Demote to Player", use_container_width=True):
+                            res = requests.put(f"{API_BASE_URL}/auth/demote/{selected_user}")
+                            st.warning(f"{selected_user} demoted.")
+                            st.rerun()
+
+                with col2:
+                    # Danger Zone: Delete Account
+                    if st.button("🗑️ Delete Account", type="secondary", use_container_width=True):
+                        # Simple confirmation check
+                        st.session_state.confirm_delete = selected_user
+                
+                # Confirmation logic for deletion
+                if 'confirm_delete' in st.session_state and st.session_state.confirm_delete == selected_user:
+                    st.warning(f"Are you sure you want to permanently delete {selected_user}?")
+                    if st.button(f"Yes, Delete {selected_user} Permanently"):
+                        del_res = requests.delete(f"{API_BASE_URL}/auth/accounts/{selected_user}")
+                        if del_res.status_code == 200:
+                            st.success("Account deleted.")
+                            del st.session_state.confirm_delete
+                            st.rerun()
+            else:
+                st.info("No other users found in the system.")
+        else:
+            st.error("Could not fetch account list.")

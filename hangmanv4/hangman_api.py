@@ -316,16 +316,39 @@ def remove_word(word_id: int):
 
 # --- AUTH ENDPOINTS ---
 
+# --- AUTH ENDPOINTS (ADD THIS ONE) ---
+
+@app.get("/auth/accounts", tags=["Auth"])
+def get_all_accounts():
+    """Returns a list of all registered accounts and their roles."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # We select username, email, and role (excluding passwords for safety)
+    cursor.execute("SELECT username, email, role FROM users")
+    accounts = [{"username": row[0], "email": row[1], "role": row[2]} for row in cursor.fetchall()]
+    
+    conn.close()
+    return accounts
+
 @app.post("/auth/register", tags=["Auth"])
 def register_user(user: UserRegister):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        # Check if user already exists
-        cursor.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)", 
-                       (user.username.strip(), user.email.strip().lower(), user.password, user.role.lower()))
+        # Check if any users exist in the database yet
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+
+        # Bootstrap logic: First user is admin, everyone else is a player
+        assigned_role = "admin" if user_count == 0 else "player"
+
+        cursor.execute(
+            "INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)", 
+            (user.username.strip(), user.email.strip().lower(), user.password, assigned_role)
+        )
         conn.commit()
-        return {"message": f"User '{user.username}' registered successfully as {user.role}!"}
+        return {"message": f"User '{user.username}' registered successfully as {assigned_role}!"}
     except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Username or Email already exists.")
@@ -353,6 +376,37 @@ def login_user(user: UserLogin):
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
 
+@app.put("/auth/demote/{target_username}", tags=["Auth"])
+def demote_user(target_username: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Change role back to player
+    cursor.execute("UPDATE users SET role = 'player' WHERE username = ?", (target_username,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": f"User '{target_username}' has been demoted to Player."}
+
+@app.delete("/auth/accounts/{username}", tags=["Auth"])
+def delete_account(username: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Delete from the authentication table
+    cursor.execute("DELETE FROM users WHERE username = ?", (username,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Account not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": f"Account '{username}' has been permanently deleted."}
 # --- USER (SCORE) ENDPOINTS ---
 
 # 1. Create User (Create)
@@ -485,3 +539,18 @@ def record_win(player_name: str):
     conn.close()
 
     return {"message": f"{clean_name} win recorded!"}
+
+@app.put("/auth/promote/{target_username}", tags=["Auth"])
+def promote_user(target_username: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE users SET role = 'admin' WHERE username = ?", (target_username,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": f"User '{target_username}' has been promoted to Admin."}    

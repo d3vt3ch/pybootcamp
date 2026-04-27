@@ -1,10 +1,28 @@
-# Update Authentication layer
+# Update Authentication layer with password hashing
+# Admin protection as root
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import sqlite3
 from typing import Optional
 import random
+import bcrypt
+
+# --- HASHING UTILITIES (NEW FOR PYTHON 3.13) ---
+def hash_password(password: str):
+    # Convert string to bytes
+    pwd_bytes = password.encode('utf-8')
+    # Generate salt and hash
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(pwd_bytes, salt)
+    # Return as string to store in DB
+    return hashed.decode('utf-8')
+
+def verify_password(plain_password, hashed_password):
+    # Convert both to bytes for comparison
+    pwd_bytes = plain_password.encode('utf-8')
+    hashed_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(pwd_bytes, hashed_bytes)
 
 # --- DATABASE CONFIGURATION ---
 DB_NAME = "hangman.db"
@@ -14,6 +32,17 @@ def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
+
+    # update logger
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_username TEXT,
+            action TEXT,
+            details TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
 
     # NEW: Table for authentication and roles
     cursor.execute("""
@@ -159,6 +188,16 @@ class UserUpdate(BaseModel):
 
 # --- API ENDPOINTS ---
 
+def log_action(admin_username: str, action: str, details: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO activity_log (admin_username, action, details) VALUES (?, ?, ?)",
+        (admin_username, action, details)
+    )
+    conn.commit()
+    conn.close()
+
 # 1. Create New Category (Create)
 @app.post("/categories/", tags=["Categories"])
 def create_category(category: CategoryCreate):
@@ -216,23 +255,33 @@ def update_category(category_id: int, category_data: CategoryUpdate):
 
 # 4. Remove Category (Delete)
 @app.delete("/categories/{category_id}", tags=["Categories"])
-def remove_category(category_id: int):
+def remove_category(category_id: int, admin_name: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("PRAGMA foreign_keys = ON") # Crucial for cascading deletes
-    
+    cursor.execute("PRAGMA foreign_keys = ON")
+
+    # 1. Fetch the name FIRST before deleting
+    cursor.execute("SELECT name FROM categories WHERE id = ?", (category_id,))
+    cat_row = cursor.fetchone()
+    cat_name = cat_row[0] if cat_row else "Unknown"
+
+    # 2. Perform the deletion
     cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Category not found.")
         
     conn.commit()
     conn.close()
-    return {"message": "Category and all associated words deleted successfully."}
+    
+    log_action(admin_name, "DELETE_CATEGORY", f"Deleted category: {cat_name}")
+    return {"message": "Category deleted successfully."}
+
 
 # 5. Add Word (Create)
 @app.post("/words/", tags=["Words"])
-def add_word(word_data: WordCreate):
+def add_word(word_data: WordCreate, admin_name: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
@@ -243,6 +292,7 @@ def add_word(word_data: WordCreate):
         (word_data.category_id, word_data.word.lower().strip(), word_data.hint)
         )
         conn.commit()
+        log_action(admin_name, "CREATE_WORD", f"Added word: {word_data.word}")
         return {"message": f"Word '{word_data.word}' added successfully!"}
     except sqlite3.IntegrityError:
         conn.close()
@@ -286,7 +336,7 @@ def view_words():
     
 # 7. Edit Word (Update)
 @app.put("/words/{word_id}", tags=["Words"])
-def edit_word(word_id: int, word_data: WordUpdate):
+def edit_word(word_id: int, word_data: WordUpdate,admin_name: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
@@ -297,35 +347,93 @@ def edit_word(word_id: int, word_data: WordUpdate):
         
     conn.commit()
     conn.close()
+    log_action(admin_name, "UPDATE_WORD", f"Update word: {word_data.word}")
     return {"message": "Word updated successfully."}
 
 # 8. Remove Word (Delete)
+# --- FIX: REMOVE WORD ---
 @app.delete("/words/{word_id}", tags=["Words"])
-def remove_word(word_id: int):
+def remove_word(word_id: int, admin_name: str):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
+    # 1. Fetch word text FIRST before deleting
+    cursor.execute("SELECT word FROM words WHERE id = ?", (word_id,))
+    word_row = cursor.fetchone()
+    word_txt = word_row[0] if word_row else "Unknown"
+    
+    # 2. Perform the deletion
     cursor.execute("DELETE FROM words WHERE id = ?", (word_id,))
+    
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Word not found.")
         
     conn.commit()
     conn.close()
+    
+    log_action(admin_name, "DELETE_WORD", f"Deleted word: {word_txt}")
     return {"message": "Word deleted successfully."}
 
 # --- AUTH ENDPOINTS ---
+
+# --- AUTH ENDPOINTS (ADD THIS ONE) ---
+
+@app.get("/auth/super-admin", tags=["Auth"])
+def get_super_admin():
+    """Identifies the first user ever registered (the Creator)."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # In SQLite, the first row inserted is the one with the earliest 'rowid'
+    cursor.execute("SELECT username FROM users ORDER BY rowid ASC LIMIT 1")
+    result = cursor.fetchone()
+    conn.close()
+    return {"username": result[0] if result else None}
+
+@app.get("/auth/accounts", tags=["Auth"])
+def get_all_accounts():
+    """Returns a list of all registered accounts and their roles."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # We select username, email, and role (excluding passwords for safety)
+    cursor.execute("SELECT username, email, role FROM users")
+    accounts = [{"username": row[0], "email": row[1], "role": row[2]} for row in cursor.fetchall()]
+    
+    conn.close()
+    return accounts
+
+@app.get("/auth/logs", tags=["Auth"])
+def get_activity_logs():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    # Get latest logs first
+    cursor.execute("SELECT admin_username, action, details, timestamp FROM activity_log ORDER BY timestamp DESC")
+    logs = [{"admin": r[0], "action": r[1], "details": r[2], "time": r[3]} for r in cursor.fetchall()]
+    conn.close()
+    return logs
 
 @app.post("/auth/register", tags=["Auth"])
 def register_user(user: UserRegister):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
-        # Check if user already exists
-        cursor.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)", 
-                       (user.username.strip(), user.email.strip().lower(), user.password, user.role.lower()))
+        # Check if any users exist in the database yet
+        cursor.execute("SELECT COUNT(*) FROM users")
+        user_count = cursor.fetchone()[0]
+
+        # Bootstrap logic: First user is admin, everyone else is a player
+        assigned_role = "admin" if user_count == 0 else "player"
+
+        # HASH THE PASSWORD HERE
+        hashed_pwd = hash_password(user.password)
+
+        cursor.execute(
+            "INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)", 
+            (user.username.strip(), user.email.strip().lower(), hashed_pwd, assigned_role)
+        )
         conn.commit()
-        return {"message": f"User '{user.username}' registered successfully as {user.role}!"}
+        return {"message": f"User '{user.username}' registered successfully as {assigned_role}!"}
     except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(status_code=400, detail="Username or Email already exists.")
@@ -337,21 +445,79 @@ def login_user(user: UserLogin):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # We fetch the role here so the frontend knows what permissions to give
-    cursor.execute("SELECT username, role FROM users WHERE username = ? AND password = ?", 
-                   (user.username.strip(), user.password))
+    # Only fetch by username first
+    cursor.execute("SELECT username, password, role FROM users WHERE username = ?", (user.username.strip(),))
     result = cursor.fetchone()
     conn.close()
 
-    if result:
+    # Check if user exists AND password matches the hash
+    if result and verify_password(user.password, result[1]):
         return {
             "message": "Login successful!",
             "username": result[0],
-            "role": result[1]
+            "role": result[2]
         }
     else:
         raise HTTPException(status_code=401, detail="Invalid username or password.")
 
+# Helper to check if a user is the Super Admin
+def is_super_admin(username: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM users ORDER BY rowid ASC LIMIT 1")
+    first_user = cursor.fetchone()
+    conn.close()
+    return first_user and first_user[0] == username
+
+@app.put("/auth/demote/{target_username}", tags=["Auth"])
+def demote_user(target_username: str, admin_name: str):
+    if is_super_admin(target_username):
+        raise HTTPException(status_code=403, detail="The Super Admin cannot be demoted.")
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Change role back to player
+    cursor.execute("UPDATE users SET role = 'player' WHERE username = ?", (target_username,))
+    conn.commit() # Save the change
+    conn.close() # Close connection
+    
+    log_action(admin_name, "DEMOTION", f"Demoted: {target_username}")
+    return {"message": f"User '{target_username}' has been demoted."}
+
+@app.delete("/auth/accounts/{username}", tags=["Auth"])
+def delete_account(username: str):
+    if is_super_admin(username):
+        raise HTTPException(status_code=403, detail="The Super Admin account cannot be deleted.")
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Delete from the authentication table
+    cursor.execute("DELETE FROM users WHERE username = ?", (username,))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Account not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": f"Account '{username}' has been permanently deleted."}
+
+@app.put("/auth/reset-password/{username}", tags=["Auth"])
+def reset_password(username: str, new_data: UserLogin): # Using UserLogin model for username/password
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    hashed_pwd = hash_password(new_data.password)
+    
+    cursor.execute("UPDATE users SET password = ? WHERE username = ?", (hashed_pwd, username))
+    
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    conn.commit()
+    conn.close()
+    return {"message": f"Password for '{username}' has been reset successfully."}
 
 # --- USER (SCORE) ENDPOINTS ---
 
@@ -485,3 +651,39 @@ def record_win(player_name: str):
     conn.close()
 
     return {"message": f"{clean_name} win recorded!"}
+
+@app.put("/auth/promote/{target_username}", tags=["Auth"])
+def promote_user(target_username: str, admin_name: str):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("UPDATE users SET role = 'admin' WHERE username = ?", (target_username,))
+
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found.")
+        
+    conn.commit()
+    conn.close()
+    log_action(admin_name, "PROMOTION", f"Promoted {target_username} to Admin")
+    return {"message": f"User '{target_username}' has been promoted to Admin."}    
+
+# --- GAME ENDPOINTS (ADD THIS) ---
+
+@app.delete("/game/reset-scores", tags=["Game"])
+def reset_scores(admin_name: str):
+    """Wipes all data from the scores table. Admin only (enforced by frontend)."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("DELETE FROM scores")
+        conn.commit()
+        log_action(admin_name, "RESET_SCORE", f"Score Reset successfully")
+        return {"message": "Scoreboard has been reset successfully."}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
+
