@@ -51,8 +51,8 @@ This is about becoming **more capable, adaptable, and valuable**.
 | 17 | Fastsql | ✅ Completed |
 | 18 | fastmongo | ✅ Completed |
 | 19 | streamlit | ✅ Completed |
-| 20 | fullstack RAG backend | ⏳ Pending |
-| 21 | fullstack RAG frontend | ⏳ Pending |
+| 20 | fullstack RAG backend | ✅ Completed |
+| 21 | fullstack RAG frontend | ✅ Completed |
 
 
 
